@@ -3,11 +3,18 @@
   "name": "Query X Extension",
   "version": "1.0.0",
   "description": "Query X Extension",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "tabs"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "action": {
     "default_popup": "index.html"
   },
   "host_permissions": ["<all_urls>"],
+  "externally_connectable": {
+    "matches": ["*://*/*"]
+  },
   "icons": {
     "48": "vite.svg"
   }
