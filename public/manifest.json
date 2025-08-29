@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Query X Extension",
+  "version": "1.0.0",
+  "description": "Query X Extension",
+  "permissions": ["activeTab", "scripting"],
+  "action": {
+    "default_popup": "index.html"
+  },
+  "host_permissions": ["<all_urls>"],
+  "icons": {
+    "48": "vite.svg"
+  }
+}
