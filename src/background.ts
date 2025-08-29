@@ -75,17 +75,9 @@ async function processUrl(url: string) {
       await delay(250);
     }
     const result = await execInTab(tab.id!, pageScrollAndExtract, [3000]);
-    return { url, ok: true, ...(result as object) };
+    return { url, ok: true, tabId: tab.id!, ...(result as object) };
   } catch (error) {
-    return { url, ok: false, error: String(error) };
-  } finally {
-    if (tab.id) {
-      try {
-        await chrome.tabs.remove(tab.id);
-      } catch (error) {
-        console.error(error);
-      }
-    }
+    return { url, ok: false, tabId: tab.id!, error: String(error) };
   }
 }
 
@@ -116,6 +108,19 @@ chrome.runtime.onMessageExternal.addListener(
 
       await Promise.all(workers);
       sendResponse({ ok: true, results });
+      // After responding, close all created tabs
+      const tabIdsToClose = results
+        .map((r) =>
+          r && typeof r.tabId === "number" ? (r.tabId as number) : null
+        )
+        .filter((id): id is number => id !== null);
+      if (tabIdsToClose.length > 0) {
+        try {
+          await chrome.tabs.remove(tabIdsToClose);
+        } catch (error) {
+          console.error(error);
+        }
+      }
     })();
     return true;
   }
