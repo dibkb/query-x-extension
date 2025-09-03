@@ -23,6 +23,42 @@ function pageScrollAndExtract(durationMs = 3000) {
     const distance = 400;
     const endTime = Date.now() + durationMs;
 
+    function cleanExtractedText(raw: string) {
+      try {
+        let s = String(raw || "");
+        // Normalize newlines
+        s = s.replace(/\r\n?/g, "\n");
+        // Remove fenced code blocks
+        s = s.replace(/```[\s\S]*?```/g, " ");
+        // Inline code backticks
+        s = s.replace(/`([^`]+)`/g, "$1");
+        // Images: keep alt text
+        s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1");
+        // Links: keep link text
+        s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1");
+        // Headings: drop leading # markers
+        s = s.replace(/^\s{0,3}#{1,6}\s*/gm, "");
+        // Blockquotes: drop leading >
+        s = s.replace(/^\s*>\s?/gm, "");
+        // List bullets and ordered list markers
+        s = s.replace(/^\s*(?:[-*+]|\d+\.)\s+/gm, "");
+        // Emphasis markers
+        s = s.replace(/\*\*([^*]+)\*\*/g, "$1");
+        s = s.replace(/\*([^*]+)\*/g, "$1");
+        s = s.replace(/__([^_]+)__/g, "$1");
+        s = s.replace(/_([^_]+)_/g, "$1");
+        // Horizontal rules
+        s = s.replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, " ");
+        // Collapse all whitespace (including newlines and non-breaking spaces)
+        s = s.replace(/[\s\u00A0]+/g, " ").trim();
+        return s;
+      } catch {
+        return String(raw || "")
+          .replace(/[\s\u00A0]+/g, " ")
+          .trim();
+      }
+    }
+
     const timer = setInterval(() => {
       window.scrollBy(0, distance);
       totalHeight += distance;
@@ -55,9 +91,10 @@ function pageScrollAndExtract(durationMs = 3000) {
           parts.push((walker.currentNode as any).nodeValue as string);
         }
         const textContent = parts.join("\n");
+        const cleaned = cleanExtractedText(textContent);
         resolve({
-          text: textContent,
-          length: textContent.length,
+          text: cleaned,
+          length: cleaned.length,
           title: document.title,
           url: location.href,
         });
