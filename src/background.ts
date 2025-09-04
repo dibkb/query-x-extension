@@ -3,6 +3,20 @@
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+// Track in-flight scrapes by normalized URL to prevent duplicate tab spawns
+const activeUrlTasks = new Map<string, Promise<any>>();
+
+function normalizeUrlString(raw: string): string {
+  try {
+    const u = new URL(String(raw || "").trim());
+    // Scraping should be independent of hash fragments
+    u.hash = "";
+    return u.href;
+  } catch {
+    return String(raw || "").trim();
+  }
+}
+
 async function execInTab<T = any>(
   tabId: number,
   func: (...args: any[]) => T,
@@ -118,18 +132,38 @@ async function processUrl(url: string) {
   }
 }
 
+function scrapeUrlOnce(url: string): Promise<any> {
+  const key = normalizeUrlString(url);
+  const existing = activeUrlTasks.get(key);
+  if (existing) return existing;
+  const task = (async () => {
+    return await processUrl(key);
+  })().finally(() => {
+    activeUrlTasks.delete(key);
+  });
+  activeUrlTasks.set(key, task);
+  return task;
+}
+
 chrome.runtime.onMessageExternal.addListener(
   (message, _sender, sendResponse) => {
     if (!message || message.type !== "SCRAPE_URLS") return;
     const urls: string[] = Array.isArray(message.urls) ? message.urls : [];
-    if (urls.length === 0) {
+    const uniqueUrls = Array.from(
+      new Set(
+        urls
+          .filter((u) => typeof u === "string" && u.trim().length > 0)
+          .map((u) => normalizeUrlString(u))
+      )
+    );
+    if (uniqueUrls.length === 0) {
       sendResponse({ ok: false, error: "No URLs provided" });
       return;
     }
 
     (async () => {
       const concurrency = 5;
-      const queue = [...urls];
+      const queue = [...uniqueUrls];
       const results: any[] = [];
 
       const workers = new Array(Math.min(concurrency, queue.length))
@@ -138,7 +172,7 @@ chrome.runtime.onMessageExternal.addListener(
           while (queue.length > 0) {
             const next = queue.shift();
             if (!next) break;
-            const res = await processUrl(next);
+            const res = await scrapeUrlOnce(next);
             results.push(res);
           }
         });
@@ -146,11 +180,15 @@ chrome.runtime.onMessageExternal.addListener(
       await Promise.all(workers);
       sendResponse({ ok: true, results });
       // After responding, close all created tabs
-      const tabIdsToClose = results
-        .map((r) =>
-          r && typeof r.tabId === "number" ? (r.tabId as number) : null
+      const tabIdsToClose = Array.from(
+        new Set(
+          results
+            .map((r) =>
+              r && typeof r.tabId === "number" ? (r.tabId as number) : null
+            )
+            .filter((id): id is number => id !== null)
         )
-        .filter((id): id is number => id !== null);
+      );
       if (tabIdsToClose.length > 0) {
         try {
           await chrome.tabs.remove(tabIdsToClose);
