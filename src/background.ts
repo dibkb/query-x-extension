@@ -2,14 +2,11 @@
 
 const delay = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
-
-// Track in-flight scrapes by normalized URL to prevent duplicate tab spawns
 const activeUrlTasks = new Map<string, Promise<any>>();
 
 function normalizeUrlString(raw: string): string {
   try {
     const u = new URL(String(raw || "").trim());
-    // Scraping should be independent of hash fragments
     u.hash = "";
     return u.href;
   } catch {
@@ -73,6 +70,54 @@ function pageScrollAndExtract(durationMs = 3000) {
       }
     }
 
+    function collectImageUrls(): string[] {
+      try {
+        const urls = new Set<string>();
+        const toAbs = (u: string) => {
+          try {
+            return new URL(u, document.baseURI).href;
+          } catch {
+            return u;
+          }
+        };
+
+        // <img src>
+        Array.from(document.images).forEach((img) => {
+          const src =
+            (img as HTMLImageElement).src ||
+            (img as HTMLImageElement).getAttribute("src") ||
+            "";
+          if (src) urls.add(toAbs(src));
+          const srcset =
+            (img as HTMLImageElement).srcset ||
+            (img as HTMLImageElement).getAttribute("srcset") ||
+            "";
+          if (srcset) {
+            srcset
+              .split(",")
+              .map((s) => s.trim().split(/\s+/)[0])
+              .filter(Boolean)
+              .forEach((u) => urls.add(toAbs(u)));
+          }
+        });
+
+        // <source srcset> inside <picture>
+        document.querySelectorAll("source[srcset]").forEach((el) => {
+          const srcset = (el.getAttribute("srcset") || "").trim();
+          if (!srcset) return;
+          srcset
+            .split(",")
+            .map((s) => s.trim().split(/\s+/)[0])
+            .filter(Boolean)
+            .forEach((u) => urls.add(toAbs(u)));
+        });
+
+        return Array.from(urls);
+      } catch {
+        return [];
+      }
+    }
+
     const timer = setInterval(() => {
       window.scrollBy(0, distance);
       totalHeight += distance;
@@ -106,11 +151,13 @@ function pageScrollAndExtract(durationMs = 3000) {
         }
         const textContent = parts.join("\n");
         const cleaned = cleanExtractedText(textContent);
+        const imgurl = collectImageUrls();
         resolve({
           text: cleaned,
           length: cleaned.length,
           title: document.title,
           url: location.href,
+          imgurl,
         });
       }
     }, 150);
